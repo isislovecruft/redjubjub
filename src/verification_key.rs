@@ -98,10 +98,10 @@ impl<T: SigType> TryFrom<VerificationKeyBytes<T>> for VerificationKey<T> {
         if maybe_point.is_some().into() {
             let point: jubjub::ExtendedPoint = maybe_point.unwrap().into();
             // This checks that the verification key is not of small order.
-            if <bool>::from(point.is_small_order()) == false {
-                Ok(VerificationKey { point, bytes })
-            } else {
+            if point.is_small_order().into() {
                 Err(Error::MalformedVerificationKey)
+            } else {
+                Ok(VerificationKey { point, bytes })
             }
         } else {
             Err(Error::MalformedVerificationKey)
@@ -134,13 +134,18 @@ impl VerificationKey<SpendAuth> {
 }
 
 impl<T: SigType> VerificationKey<T> {
-    pub(crate) fn from(s: &Scalar) -> VerificationKey<T> {
+    pub(crate) fn try_from(s: &Scalar) -> Result<VerificationKey<T>, Error> {
         let point = &T::basepoint() * s;
+
+        if point.is_small_order().into() {
+            return Err(Error::MalformedVerificationKey);
+        }
+
         let bytes = VerificationKeyBytes {
             bytes: jubjub::AffinePoint::from(&point).to_bytes(),
             _marker: PhantomData,
         };
-        VerificationKey { bytes, point }
+        Ok(VerificationKey { point, bytes })
     }
 
     /// Verify a purported `signature` over `msg` made by this verification key.

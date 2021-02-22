@@ -48,8 +48,12 @@ impl<T: SigType> TryFrom<[u8; 32]> for SigningKey<T> {
         let maybe_sk = Scalar::from_bytes(&bytes);
         if maybe_sk.is_some().into() {
             let sk = maybe_sk.unwrap();
-            let pk = VerificationKey::from(&sk);
-            Ok(SigningKey { sk, pk })
+            let maybe_pk = VerificationKey::try_from(&sk);
+            if maybe_pk.is_ok() {
+                Ok(SigningKey { sk, pk: maybe_pk.unwrap() })
+            } else {
+                Err(Error::MalformedVerificationKey)
+            }
         } else {
             Err(Error::MalformedSigningKey)
         }
@@ -75,22 +79,26 @@ impl<T: SigType> From<SigningKey<T>> for SerdeHelper {
 
 impl SigningKey<SpendAuth> {
     /// Randomize this public key with the given `randomizer`.
-    pub fn randomize(&self, randomizer: &Randomizer) -> SigningKey<SpendAuth> {
+    pub fn randomize(&self, randomizer: &Randomizer) -> Result<SigningKey<SpendAuth>, Error> {
         let sk = &self.sk + randomizer;
-        let pk = VerificationKey::from(&sk);
-        SigningKey { sk, pk }
+        let pk = VerificationKey::try_from(&sk)?;
+        Ok(SigningKey { sk, pk })
     }
 }
 
 impl<T: SigType> SigningKey<T> {
     /// Generate a new signing key.
     pub fn new<R: RngCore + CryptoRng>(mut rng: R) -> SigningKey<T> {
-        let sk = {
-            let mut bytes = [0; 64];
-            rng.fill_bytes(&mut bytes);
-            Scalar::from_bytes_wide(&bytes)
-        };
-        let pk = VerificationKey::from(&sk);
+        let mut pk: Option<SigningKey> = None;
+        let mut sk: Scalar;
+
+        while pk.is_none() {
+            sk = {
+                let mut bytes = [0; 64];
+                rng.fill_bytes(&mut bytes);
+                Scalar::from_bytes_wide(&bytes)
+            };
+            let may pk = VerificationKey::try_from(&sk);
         SigningKey { sk, pk }
     }
 
